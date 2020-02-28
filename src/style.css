@@ -1,0 +1,9 @@
+.upload {
+  display: inline-block;
+}
+
+.upload .upload-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
