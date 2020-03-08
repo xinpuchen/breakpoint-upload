@@ -1,0 +1,18 @@
+{
+    "{src,site}/**/*.{js,jsx,md}": [
+    "eslint --fix",
+    "git add"
+  ],
+   "{src,site}/**/*.scss": [
+    "stylelint --syntax=scss",
+    "git add"
+  ],
+  "{src,site}/**/*.{md}": [
+    "prettier-eslint --write",
+    "git add"
+  ],
+  "{src,site}/**/*.{json}": [
+    "prettier-eslint --write",
+    "git add"
+  ]
+}
