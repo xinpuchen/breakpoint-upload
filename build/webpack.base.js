@@ -5,7 +5,7 @@ module.exports = {
   mode: NODE_ENV,
   entry: path.resolve(__dirname, '../src/index.js'),
   output: {
-    path: path.resolve(__dirname, '../lib'),
+    path: path.resolve(__dirname, '..'),
     filename: 'index.js',
   },
   module: {
