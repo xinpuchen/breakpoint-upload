@@ -1,8 +1,8 @@
 {
   "name": "breakpoint-upload",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Breakpoint upload component",
-  "main": "lib/breakpoint-upload.js",
+  "main": "index.js",
   "scripts": {
     "dev": "NODE_ENV=development webpack --config build/webpack.dev.js --progress --colors",
     "build": "NODE_ENV=production webpack --config build/webpack.prod.js"
