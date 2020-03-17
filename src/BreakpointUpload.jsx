@@ -6,6 +6,7 @@ import defaultRequest from './utils/request';
 import attrAccept from './utils/attr-accept';
 import traverseFileTree from './utils/traverseFileTree';
 import warning from './utils/warning';
+import calculateHash from './utils/hash';
 
 const noop = () => {};
 
@@ -60,8 +61,7 @@ class BreakpointUpload extends Component {
     super(props);
     this.reqs = {};
     this.files = {};
-    this.fileSlices = {};
-    this.uploadedSlice = {};
+    this.fileChunkList = {};
     this.progressEvent = {};
     this.state = {
       uid: getUid(),
@@ -76,8 +76,7 @@ class BreakpointUpload extends Component {
   componentWillUnmount() {
     this.uploaderMounted = false;
     this.files = {};
-    this.fileSlices = {};
-    this.uploadedSlice = {};
+    this.fileChunkList = {};
     this.progressEvent = {};
     this.abort();
   }
@@ -91,6 +90,18 @@ class BreakpointUpload extends Component {
     const { breakPoint, multiple } = this.props;
     return breakPoint ? false : multiple;
   }
+
+  setUploaded = (uid, hash) => {
+    const uploaded = this.getUploaded(uid) || [];
+    uploaded.push(hash);
+    localStorage.setItem(uid, JSON.stringify(uploaded));
+  };
+
+  getUploaded = uid => JSON.parse(localStorage.getItem(uid)) || [];
+
+  removeUploaded = uid => {
+    localStorage.removeItem(uid);
+  };
 
   onChange = e => {
     const { files } = e.target;
@@ -136,34 +147,30 @@ class BreakpointUpload extends Component {
     }
   };
 
-  sliceFileChunk(file, size) {
-    const fileSlices = [];
-    let cur = 0;
-    while (cur < file.size) {
-      const slice = new File([file.slice(cur, cur + size)], file.name, {
-        type: file.type,
-      });
-      fileSlices.push(
-        Object.assign(slice, {
-          uid: file.uid,
-          hash: `${file.type}-${file.size}-${file.lastModified}-${cur}`,
-        }),
-      );
-      cur += size;
-    }
-    this.fileSlices[file.uid] = fileSlices;
-    return fileSlices;
-  }
-
-  uploadFiles(files) {
+  uploadFiles = async files => {
+    const { breakPoint, sliceSize } = this.props;
     const postFiles = [...files];
-    postFiles.forEach(file => {
-      const fileWithId = Object.assign(file, { uid: getUid() });
+    if (breakPoint) {
+      const { hash, fileChunkList } = await calculateHash(postFiles[0], sliceSize);
+      const fileWithId = Object.assign(postFiles[0], { uid: hash });
+      const uploadedList = this.getUploaded(hash);
+      if (uploadedList.length) {
+        this.fileChunkList[hash] = fileChunkList.filter(
+          chunk => !uploadedList.includes(chunk.hash),
+        );
+      } else {
+        this.fileChunkList[hash] = fileChunkList;
+      }
       this.upload(fileWithId, postFiles);
-    });
-  }
+    } else {
+      postFiles.forEach(file => {
+        const fileWithId = Object.assign(file, { uid: getUid() });
+        this.upload(fileWithId, postFiles);
+      });
+    }
+  };
 
-  upload(file, fileList) {
+  upload = (file, fileList) => {
     const { beforeUpload } = this.props;
     if (!beforeUpload) {
       return setTimeout(() => this.beforeRequest(file), 0);
@@ -185,11 +192,11 @@ class BreakpointUpload extends Component {
       setTimeout(() => this.beforeRequest(file), 0);
     }
     return true;
-  }
+  };
 
-  beforeRequest(file) {
+  beforeRequest = file => {
     if (!this.uploaderMounted) return;
-    const { data, action, breakPoint, sliceSize, onStart } = this.props;
+    const { data, action, breakPoint, onStart } = this.props;
 
     let currentData = data;
     if (typeof currentData === 'function') {
@@ -211,16 +218,15 @@ class BreakpointUpload extends Component {
       onStart(file);
       if (breakPoint) {
         this.reqs[uid] = {};
-        this.uploadedSlice[uid] = {};
         this.progressEvent[uid] = {};
-        this.sliceFileChunk(file, sliceSize).forEach(slice => {
+        this.fileChunkList[uid].forEach(slice => {
           this.reqs[uid][slice.hash] = this.request({ ...params, file: slice });
         });
       } else {
         this.reqs[uid] = this.request(params);
       }
     });
-  }
+  };
 
   request(params) {
     const {
@@ -229,6 +235,7 @@ class BreakpointUpload extends Component {
       withCredentials,
       customRequest,
       breakPoint,
+      sliceSize,
       onProgress,
       onSuccess,
       onError,
@@ -244,9 +251,10 @@ class BreakpointUpload extends Component {
       onProgress: e => {
         if (breakPoint) {
           this.progressEvent[uid][hash] = e;
-          const loaded = values(this.progressEvent[uid])
-            .map(l => l.loaded)
-            .reduce((a, b) => a + b, 0);
+          const loaded = this.getUploaded(uid).length * sliceSize
+            + Object.values(this.progressEvent[uid])
+              .map(l => l.loaded)
+              .reduce((a, b) => a + b, 0);
           const total = this.files[uid].size;
           const percent = loaded / total > 1 ? 100 : (loaded / total) * 100;
           e.totalPercent = percent;
@@ -258,12 +266,13 @@ class BreakpointUpload extends Component {
       onSuccess: (res, xhr) => {
         if (breakPoint) {
           delete this.reqs[uid][hash];
-          this.uploadedSlice[uid][hash] = file;
-          if (keys(this.uploadedSlice[uid]).length === this.fileSlices[uid].length) {
+          delete this.progressEvent[uid][hash];
+          this.setUploaded(uid, hash);
+          if (this.getUploaded(uid).length === this.fileChunkList[uid].length) {
             onSuccess(res, this.files[uid], xhr);
             delete this.files[uid];
-            delete this.uploadedSlice[uid];
             delete this.progressEvent[uid];
+            this.removeUploaded(uid);
           }
         } else {
           delete this.reqs[uid];
@@ -274,6 +283,7 @@ class BreakpointUpload extends Component {
       onError: (err, res) => {
         if (breakPoint) {
           delete this.reqs[uid][hash];
+          delete this.progressEvent[uid][hash];
           onError(err, res, this.files[uid]);
         } else {
           delete this.reqs[uid];
@@ -300,17 +310,29 @@ class BreakpointUpload extends Component {
 
   abort(fileId) {
     const { reqs } = this;
+    const { breakPoint } = this.props;
     if (fileId) {
       if (reqs[fileId]) {
-        reqs[fileId].abort();
+        if (breakPoint) {
+          Object.keys(reqs[fileId]).forEach(hash => {
+            reqs[fileId][hash].abort();
+          });
+        } else {
+          reqs[fileId].abort();
+        }
         delete reqs[fileId];
       }
     } else {
       Object.keys(reqs).forEach(uid => {
         if (reqs[uid]) {
-          reqs[uid].abort();
+          if (reqs[uid].abort) {
+            reqs[uid].abort();
+          } else {
+            Object.keys(reqs[uid]).forEach(hash => {
+              reqs[fileId][hash].abort();
+            });
+          }
         }
-
         delete reqs[uid];
       });
     }
@@ -323,12 +345,12 @@ class BreakpointUpload extends Component {
     const events = disabled
       ? {}
       : {
-          onClick: this.onClick,
-          onKeyDown: this.onKeyDown,
-          onDrop: this.onFileDrop,
-          onDragOver: this.onFileDrop,
-          onDragLeave: this.onFileDrop,
-        };
+        onClick: this.onClick,
+        onKeyDown: this.onKeyDown,
+        onDrop: this.onFileDrop,
+        onDragOver: this.onFileDrop,
+        onDragLeave: this.onFileDrop,
+      };
 
     return (
       <span

@@ -1,6 +1,6 @@
 {
   "name": "breakpoint-upload",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Breakpoint upload component",
   "main": "index.js",
   "scripts": {
@@ -25,8 +25,10 @@
   "dependencies": {
     "@babel/runtime": "^7.8.4",
     "classnames": "^2.2.6",
+    "prop-types": "^15.7.2",
     "react": "^16.13.0",
-    "react-dom": "^16.13.0"
+    "react-dom": "^16.13.0",
+    "spark-md5": "^3.0.1"
   },
   "devDependencies": {
     "@babel/core": "^7.8.6",
@@ -37,6 +39,7 @@
     "@babel/runtime-corejs3": "^7.8.7",
     "@commitlint/cli": "^8.3.5",
     "@commitlint/config-conventional": "^8.3.4",
+    "babel-eslint": "^10.1.0",
     "babel-loader": "^8.0.6",
     "css-loader": "^3.4.2",
     "eslint": "^6.8.0",
