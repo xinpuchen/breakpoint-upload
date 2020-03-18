@@ -1,8 +1,6 @@
 # breakpoint-upload
 
----
-
-React upload component
+> React upload component
 
 ## Development
 
