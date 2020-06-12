@@ -1,12 +1,12 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
+import SparkMD5 from 'spark-md5';
 
 import defaultRequest from './utils/request';
 import attrAccept from './utils/attr-accept';
 import traverseFileTree from './utils/traverseFileTree';
 import warning from './utils/warning';
-import calculateHash from './utils/hash';
 
 const noop = () => {};
 
@@ -147,11 +147,64 @@ class BreakpointUpload extends Component {
     }
   };
 
+  createFileChunk = (file, size) => {
+    const fileChunkList = [];
+    let cur = 0;
+    while (cur < file.size) {
+      fileChunkList.push(file.slice(cur, cur + size));
+      cur += size;
+    }
+    return fileChunkList;
+  };
+
+  calculateHash = fileChunkList =>
+    new Promise(resolve => {
+      const blob = new Blob(
+        [
+          `
+        self.onmessage = e => {
+          const { fileChunkList, SparkMD5 } = e.data;
+          const spark = new SparkMD5.ArrayBuffer();
+          let count = 0;
+          const loadNext = index => {
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(fileChunkList[index].file);
+            reader.onload = () => {
+              count += 1;
+              spark.append(e.target.result);
+              if (count === fileChunkList.length) {
+                self.postMessage({
+                  hash: spark.end(),
+                });
+                self.close();
+              } else {
+                loadNext(count);
+              }
+            };
+          };
+          loadNext(0);
+        };
+      `,
+        ],
+        { type: 'text/plain;charset=utf-8' },
+      );
+      const blobURL = URL.createObjectURL(blob.getBlob());
+      this.worker = new Worker(blobURL);
+      this.worker.postMessage({ fileChunkList, SparkMD5 });
+      this.worker.onmessage = e => {
+        const { hash } = e.data;
+        if (hash) {
+          resolve(hash);
+        }
+      };
+    });
+
   uploadFiles = async files => {
     const { breakPoint, sliceSize } = this.props;
     const postFiles = [...files];
     if (breakPoint) {
-      const { hash, fileChunkList } = await calculateHash(postFiles[0], sliceSize);
+      const fileChunkList = this.createFileChunk(postFiles[0], sliceSize);
+      const hash = await this.calculateHash(fileChunkList);
       const fileWithId = Object.assign(postFiles[0], { uid: hash });
       const uploadedList = this.getUploaded(hash);
       if (uploadedList.length) {
@@ -251,8 +304,9 @@ class BreakpointUpload extends Component {
       onProgress: e => {
         if (breakPoint) {
           this.progressEvent[uid][hash] = e;
-          const loaded = this.getUploaded(uid).length * sliceSize
-            + Object.values(this.progressEvent[uid])
+          const loaded =
+            this.getUploaded(uid).length * sliceSize +
+            Object.values(this.progressEvent[uid])
               .map(l => l.loaded)
               .reduce((a, b) => a + b, 0);
           const total = this.files[uid].size;
@@ -345,12 +399,12 @@ class BreakpointUpload extends Component {
     const events = disabled
       ? {}
       : {
-        onClick: this.onClick,
-        onKeyDown: this.onKeyDown,
-        onDrop: this.onFileDrop,
-        onDragOver: this.onFileDrop,
-        onDragLeave: this.onFileDrop,
-      };
+          onClick: this.onClick,
+          onKeyDown: this.onKeyDown,
+          onDrop: this.onFileDrop,
+          onDragOver: this.onFileDrop,
+          onDragLeave: this.onFileDrop,
+        };
 
     return (
       <span
